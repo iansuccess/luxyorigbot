@@ -5,7 +5,6 @@ const EMOJI_WRONG = '<a:wrong1:1539239292394803311>';
 const EMOJI_VERIFY = '<a:verify:1539238356003848344>';
 const vcOwnersPath = path.join(__dirname, 'data', 'vcowners.json');
 
-// ✅ Load list ng may-ari ng VC
 function getVCOwners() {
     if (!fs.existsSync(vcOwnersPath)) {
         fs.mkdirSync(path.dirname(vcOwnersPath), { recursive: true });
@@ -20,7 +19,6 @@ function getVCOwners() {
     }
 }
 
-// ✅ I-save kung sino ang may-ari ng bagong VC
 function saveVCOwner(channelId, ownerId) {
     const owners = getVCOwners();
     owners[channelId] = ownerId;
@@ -28,10 +26,8 @@ function saveVCOwner(channelId, ownerId) {
     console.log(`✅ VC Saved — Channel: ${channelId} | Owner: ${ownerId}`);
 }
 
-// ✅ Check kung pwede mag-edit ng VC
 async function canManageVC(member, voiceChannel) {
     if (!voiceChannel) return false;
-    // Admin / Server Owner — laging pwede
     if (member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         console.log(`✅ Admin Pass: ${member.user.tag}`);
         return true;
@@ -40,7 +36,6 @@ async function canManageVC(member, voiceChannel) {
         console.log(`✅ Server Owner Pass: ${member.user.tag}`);
         return true;
     }
-    // Check kung siya ang may-ari
     const owners = getVCOwners();
     const ownerId = owners[voiceChannel.id];
     const isOwner = ownerId === member.id;
@@ -48,8 +43,8 @@ async function canManageVC(member, voiceChannel) {
     return isOwner;
 }
 
-// ✅ I-send ang Control Panel — ITO ANG NAKALIMUTAN
-async function sendControlPanel(channel) {
+// ✅ I-send ang panel sa TEXT channel
+async function sendControlPanel(textChannel) {
     const embed = new EmbedBuilder()
         .setTitle('Voice Control Panel')
         .setDescription('⤷ Use the buttons below to manage your private voice channel.\n⤷ Make sure you are in your voice channel to use these commands.');
@@ -59,27 +54,20 @@ async function sendControlPanel(channel) {
             new ButtonBuilder().setCustomId('lock_vc').setLabel('Lock').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId('unlock_vc').setLabel('Unlock').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('trust_user').setLabel('Trust User').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('untrust_user').setLabel('Untrust User').setStyle(ButtonStyle.Secondary)
-        );
-
-    const row2 = new ActionRowBuilder()
-        .addComponents(
+            new ButtonBuilder().setCustomId('untrust_user').setLabel('Untrust User').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('rename_vc').setLabel('Edit Channel Name').setStyle(ButtonStyle.Secondary)
         );
 
-    await channel.send({ embeds: [embed], components: [row1, row2] });
+    await textChannel.send({ embeds: [embed], components: [row1] });
 }
 
-// ✅ Kapag pumasok sa "Click Me" — gumawa ng sariling VC
 async function handleVoiceStateUpdate(oldState, newState, config) {
     const guild = newState.guild;
     if (!guild) return;
     const setup = config.vcSetups?.[guild.id];
     if (!setup) return;
 
-    // Pumasok sa trigger channel → gumawa ng bago
     if (newState.channelId === setup.triggerId && newState.member) {
-        // Kung may naiwan na walang tao sa lumang VC, burahin
         if (oldState.channelId && oldState.channelId !== newState.channelId) {
             const oldVC = guild.channels.cache.get(oldState.channelId);
             if (oldVC && oldVC.members.size === 0 && getVCOwners()[oldVC.id]) {
@@ -105,17 +93,17 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
             ]
         });
 
-        // I-save kung sino ang may-ari
         saveVCOwner(newVC.id, newState.member.id);
 
-        // ✅ I-SEND ANG CONTROL PANEL — BAGONG DAGDAG LANG
-        await sendControlPanel(newVC);
+        // ✅ Kunin yung TEXT channel at doon mag-send ng panel
+        const panelChannel = guild.channels.cache.get(setup.panelChannelId);
+        if (panelChannel) {
+            await sendControlPanel(panelChannel);
+        }
 
-        // Ilipat ang user sa bagong VC
         await newState.setChannel(newVC);
     }
 
-    // Lumabas ng VC → kung walang tao, burahin
     if (oldState.channelId && !newState.channelId) {
         const oldVC = guild.channels.cache.get(oldState.channelId);
         if (!oldVC) return;
@@ -132,7 +120,6 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
     }
 }
 
-// ✅ Mga button action — WALA NAGBAGO
 async function handleButtonInteraction(interaction, config) {
     const memberVC = interaction.member.voice.channel;
     if (!memberVC) {
@@ -195,7 +182,6 @@ async function handleButtonInteraction(interaction, config) {
     }
 }
 
-// ✅ Handle Modal — WALA NAGBAGO
 async function handleModalInteraction(interaction, config) {
     await interaction.deferReply({ ephemeral: true });
     const memberVC = interaction.member.voice.channel;
@@ -224,36 +210,45 @@ async function handleModalInteraction(interaction, config) {
     }
 }
 
-// ✅ ITO ANG KULANG — executeSetupVC function
+// ✅ /setupvc — Gumawa ng CATEGORY + TEXT CHANNEL + TRIGGER VC
 async function executeSetupVC(interaction, config) {
     try {
         await interaction.deferReply({ ephemeral: false });
         const guild = interaction.guild;
         if (!guild) return;
 
-        // Gumawa ng category tapos trigger channel
+        // 1. Category
         const category = await guild.channels.create({
-            name: '🎙️ Private Voice Channels',
+            name: '☠️ hall of fame',
             type: ChannelType.GuildCategory
         });
 
+        // 2. TEXT CHANNEL — DITO MAGSE-SEND YUNG PANEL
+        const panelTextChannel = await guild.channels.create({
+            name: '♱﹕customize channel',
+            type: ChannelType.GuildText,
+            parent: category.id
+        });
+
+        // 3. TRIGGER VOICE CHANNEL
         const triggerVC = await guild.channels.create({
-            name: '🔊 Click Me — Create VC',
+            name: '♱﹕join to create',
             type: ChannelType.GuildVoice,
             parent: category.id
         });
 
-        // I-save sa config
+        // I-save lahat sa config
         config.vcSetups = config.vcSetups || {};
         config.vcSetups[guild.id] = {
             triggerId: triggerVC.id,
-            categoryId: category.id
+            categoryId: category.id,
+            panelChannelId: panelTextChannel.id // ✅ I-save kung saan magse-send
         };
 
         const vcConfigPath = path.join(__dirname, 'data', 'vcconfig.json');
         fs.writeFileSync(vcConfigPath, JSON.stringify(config.vcSetups, null, 2));
 
-        return interaction.editReply(`${EMOJI_VERIFY} Setup complete!\n⤷ Category: **${category.name}**\n⤷ Trigger: ${triggerVC}`);
+        return interaction.editReply(`${EMOJI_VERIFY} Setup Complete!\n⤷ Category: **${category.name}**\n⤷ Panel: ${panelTextChannel}\n⤷ Trigger: ${triggerVC}`);
     } catch (err) {
         console.error('SetupVC Error:', err);
         if (!interaction.replied && !interaction.deferred) {
@@ -272,6 +267,6 @@ module.exports = {
     getVCOwners,
     saveVCOwner,
     canManageVC,
-    sendControlPanel,  // ✅ Idinagdag
-    executeSetupVC     // ✅ Idinagdag
+    sendControlPanel,
+    executeSetupVC
 };
