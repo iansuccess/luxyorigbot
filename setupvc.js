@@ -216,5 +216,7 @@ module.exports = {
     handleModalInteraction,
     getVCOwners,
     saveVCOwner,
-    canManageVC
+    canManageVC,
+    executeSetupVC
+    
 };
