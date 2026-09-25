@@ -1,10 +1,9 @@
 const { ChannelType, PermissionsBitField, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-
 const EMOJI_WRONG = '<a:wrong1:1539239292394803311>';
 const EMOJI_VERIFY = '<a:verify:1539238356003848344>';
-
+const ARROW = '⤷';
 const vcOwnersPath = path.join(__dirname, 'data', 'vcowners.json');
 
 // ✅ Load list ng may-ari ng VC
@@ -33,8 +32,6 @@ function saveVCOwner(channelId, ownerId) {
 // ✅ Check kung pwede mag-edit ng VC
 async function canManageVC(member, voiceChannel) {
     if (!voiceChannel) return false;
-
-    // Admin / Server Owner — laging pwede
     if (member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         console.log(`✅ Admin Pass: ${member.user.tag}`);
         return true;
@@ -43,12 +40,9 @@ async function canManageVC(member, voiceChannel) {
         console.log(`✅ Server Owner Pass: ${member.user.tag}`);
         return true;
     }
-
-    // Check kung siya ang may-ari
     const owners = getVCOwners();
     const ownerId = owners[voiceChannel.id];
     const isOwner = ownerId === member.id;
-
     console.log(`🔍 Check — Channel: ${voiceChannel.name} | Owner: ${ownerId} | You: ${member.id} | ${isOwner ? '✅ ALLOW' : '❌ DENY'}`);
     return isOwner;
 }
@@ -57,13 +51,9 @@ async function canManageVC(member, voiceChannel) {
 async function handleVoiceStateUpdate(oldState, newState, config) {
     const guild = newState.guild;
     if (!guild) return;
-
     const setup = config.vcSetups?.[guild.id];
     if (!setup) return;
-
-    // Pumasok sa trigger channel → gumawa ng bago
     if (newState.channelId === setup.triggerId && newState.member) {
-        // Kung may naiwan na walang tao sa lumang VC, burahin
         if (oldState.channelId && oldState.channelId !== newState.channelId) {
             const oldVC = guild.channels.cache.get(oldState.channelId);
             if (oldVC && oldVC.members.size === 0 && getVCOwners()[oldVC.id]) {
@@ -77,8 +67,6 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
                 }, 5000);
             }
         }
-
-        // Gumawa ng bagong VC
         const newVC = await guild.channels.create({
             name: `${newState.member.user.username}'s Channel`,
             type: ChannelType.GuildVoice,
@@ -88,15 +76,9 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
                 { id: newState.member.id, allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MoveMembers] }
             ]
         });
-
-        // I-save kung sino ang may-ari
         saveVCOwner(newVC.id, newState.member.id);
-
-        // Ilipat ang user sa bagong VC
         await newState.setChannel(newVC);
     }
-
-    // Lumabas ng VC → kung walang tao, burahin
     if (oldState.channelId && !newState.channelId) {
         const oldVC = guild.channels.cache.get(oldState.channelId);
         if (!oldVC) return;
@@ -119,21 +101,17 @@ async function handleButtonInteraction(interaction, config) {
     if (!memberVC) {
         return interaction.reply({ content: `${EMOJI_WRONG} Join a voice channel first!`, ephemeral: true });
     }
-
     const setup = config.vcSetups?.[interaction.guild.id];
     if (setup && memberVC.id === setup.triggerId) {
         return interaction.reply({ content: `${EMOJI_WRONG} Join your own private channel first!`, ephemeral: true });
     }
-
     if (!(await canManageVC(interaction.member, memberVC))) {
         return interaction.reply({
             content: `${EMOJI_WRONG} Not allowed!\n\n✅ Only:\n• Channel Owner\n• Administrators / Server Owner`,
             ephemeral: true
         });
     }
-
     const everyone = interaction.guild.roles.everyone.id;
-
     switch (interaction.customId) {
         case 'lock_vc':
             await memberVC.permissionOverwrites.edit(everyone, { Connect: false });
@@ -190,7 +168,6 @@ async function handleModalInteraction(interaction, config) {
     if (!(await canManageVC(interaction.member, memberVC))) {
         return interaction.editReply(`${EMOJI_WRONG} You don't own this channel!`);
     }
-
     switch (interaction.customId) {
         case 'rename_vc_modal': {
             const newName = interaction.fields.getTextInputValue('new_name');
@@ -210,6 +187,51 @@ async function handleModalInteraction(interaction, config) {
     }
 }
 
+// ✅ ITO ANG KULANG — BUO NA GAMIT EMOJIS MO
+async function executeSetupVC(interaction, config) {
+    try {
+        await interaction.deferReply({ ephemeral: false });
+        const guild = interaction.guild;
+        if (!guild) return;
+
+        const triggerVC = await guild.channels.create({
+            name: '🔊 Click Me — Create VC',
+            type: ChannelType.GuildVoice
+        });
+
+        const category = await guild.channels.create({
+            name: '🎙️ Private Voice Channels',
+            type: ChannelType.GuildCategory
+        });
+
+        await triggerVC.setParent(category.id);
+
+        config.vcSetups = config.vcSetups || {};
+        config.vcSetups[guild.id] = {
+            triggerId: triggerVC.id,
+            categoryId: category.id
+        };
+
+        const vcConfigPath = path.join(__dirname, 'data', 'vcconfig.json');
+        fs.writeFileSync(vcConfigPath, JSON.stringify(config.vcSetups, null, 2));
+
+        return interaction.editReply({
+            content: `${EMOJI_VERIFY} Voice Channel System Setup Complete!\n\n${ARROW} Trigger: ${triggerVC}\n${ARROW} Category: **${category.name}**\n\n${ARROW} Users just join the "Click Me" channel → their own private VC will be created automatically!`
+        });
+    } catch (err) {
+        console.error('SetupVC Error:', err);
+        if (!interaction.replied && !interaction.deferred) {
+            return interaction.reply({
+                content: `${EMOJI_WRONG} Something went wrong during setup.`,
+                ephemeral: true
+            });
+        }
+        if (interaction.deferred) {
+            return interaction.editReply(`${EMOJI_WRONG} Something went wrong during setup.`);
+        }
+    }
+}
+
 module.exports = {
     handleVoiceStateUpdate,
     handleButtonInteraction,
@@ -218,5 +240,4 @@ module.exports = {
     saveVCOwner,
     canManageVC,
     executeSetupVC
-    
 };
