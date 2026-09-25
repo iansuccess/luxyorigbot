@@ -93,13 +93,6 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
         });
 
         saveVCOwner(newVC.id, newState.member.id);
-
-        // ✅ I-send ang panel sa TEXT channel
-        const panelChannel = guild.channels.cache.get(setup.panelChannelId);
-        if (panelChannel) {
-            await sendControlPanel(panelChannel);
-        }
-
         await newState.setChannel(newVC);
     }
 
@@ -245,6 +238,9 @@ async function executeSetupVC(interaction, config) {
 
         const vcConfigPath = path.join(__dirname, 'data', 'vcconfig.json');
         fs.writeFileSync(vcConfigPath, JSON.stringify(config.vcSetups, null, 2));
+
+        // ✅ DITO MO I-SEND YUNG PANEL
+        await sendControlPanel(panelTextChannel);
 
         return interaction.editReply(`${EMOJI_VERIFY} Setup Complete!\n⤷ Category: **${category.name}**\n⤷ Panel: ${panelTextChannel}\n⤷ Trigger: ${triggerVC}`);
     } catch (err) {
