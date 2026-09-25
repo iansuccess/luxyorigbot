@@ -43,7 +43,7 @@ async function canManageVC(member, voiceChannel) {
     return isOwner;
 }
 
-// ✅ I-send ang panel sa TEXT channel
+// ✅ Panel — 5 buttons sa ISANG ROW lang
 async function sendControlPanel(textChannel) {
     const embed = new EmbedBuilder()
         .setTitle('Voice Control Panel')
@@ -82,7 +82,6 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
             }
         }
 
-        // Gumawa ng bagong VC
         const newVC = await guild.channels.create({
             name: `${newState.member.user.username}'s Channel`,
             type: ChannelType.GuildVoice,
@@ -95,7 +94,7 @@ async function handleVoiceStateUpdate(oldState, newState, config) {
 
         saveVCOwner(newVC.id, newState.member.id);
 
-        // ✅ Kunin yung TEXT channel at doon mag-send ng panel
+        // ✅ I-send ang panel sa TEXT channel
         const panelChannel = guild.channels.cache.get(setup.panelChannelId);
         if (panelChannel) {
             await sendControlPanel(panelChannel);
@@ -210,39 +209,38 @@ async function handleModalInteraction(interaction, config) {
     }
 }
 
-// ✅ /setupvc — Gumawa ng CATEGORY + TEXT CHANNEL + TRIGGER VC
+// ✅ Eksakto yung pangalan at emoji na gusto mo
 async function executeSetupVC(interaction, config) {
     try {
         await interaction.deferReply({ ephemeral: false });
         const guild = interaction.guild;
         if (!guild) return;
 
-        // 1. Category
+        // Category
         const category = await guild.channels.create({
             name: '☠️ hall of fame',
             type: ChannelType.GuildCategory
         });
 
-        // 2. TEXT CHANNEL — DITO MAGSE-SEND YUNG PANEL
+        // Text Channel — DITO LALABAS ANG PANEL
         const panelTextChannel = await guild.channels.create({
             name: '♱﹕customize channel',
             type: ChannelType.GuildText,
             parent: category.id
         });
 
-        // 3. TRIGGER VOICE CHANNEL
+        // Trigger Voice Channel
         const triggerVC = await guild.channels.create({
             name: '♱﹕join to create',
             type: ChannelType.GuildVoice,
             parent: category.id
         });
 
-        // I-save lahat sa config
         config.vcSetups = config.vcSetups || {};
         config.vcSetups[guild.id] = {
             triggerId: triggerVC.id,
             categoryId: category.id,
-            panelChannelId: panelTextChannel.id // ✅ I-save kung saan magse-send
+            panelChannelId: panelTextChannel.id
         };
 
         const vcConfigPath = path.join(__dirname, 'data', 'vcconfig.json');
